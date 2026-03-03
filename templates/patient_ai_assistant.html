@@ -143,6 +143,57 @@
         .tab-btn:not(.active):hover {
             border-color: #8b5cf6;
         }
+
+        .voice-btn {
+            background: #e0f2fe;
+            border: 3px solid #3b82f6;
+            color: #1e40af;
+            font-size: 1.6rem;
+            transition: all 0.25s ease;
+        }
+
+        .voice-btn:hover {
+            background: #bfdbfe;
+            transform: scale(1.08);
+        }
+
+        .voice-btn.listening {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #991b1b;
+            animation: pulse-mic 1.2s infinite;
+        }
+
+        @keyframes pulse-mic {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        /* Stop TTS button */
+        .tts-stop-btn {
+            background: #fee2e2;
+            border: 3px solid #ef4444;
+            color: #991b1b;
+            font-size: 1.4rem;
+            transition: all 0.2s ease;
+        }
+
+        .tts-stop-btn.enabled {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .tts-stop-btn:hover {
+            background: #fecaca;
+            transform: scale(1.08);
+        }
     </style>
 </head>
 
@@ -279,7 +330,7 @@
                 </div>
                 <div>
                     <span class="px-3 py-1 bg-white/20 backdrop-blur rounded-full text-sm font-medium">
-                        🤖 Powered by Clinical BERT
+                        🤖 Powered by Neura-x
                     </span>
                 </div>
             </div>
@@ -327,7 +378,7 @@
                         <div>
                             <h3 class="font-bold text-gray-800 text-lg mb-2">About This Assistant</h3>
                             <p class="text-gray-600 text-sm leading-relaxed">
-                                This AI Health Assistant uses <strong class="text-indigo-600">Clinical BERT</strong>, a
+                                This AI Health Assistant uses <strong class="text-indigo-600">Neura-x</strong>, a
                                 specialized medical language model, to understand your health queries.
                                 It engages in a <strong class="text-purple-600">continuous conversation</strong>, asking
                                 follow-up questions to better understand your concerns.
@@ -360,7 +411,7 @@
                             </div>
                             <div>
                                 <p class="text-white font-bold">NeuraX AI</p>
-                                <p class="text-purple-200 text-sm">Clinical BERT • Always Available</p>
+                                <p class="text-purple-200 text-sm">• Always Available</p>
                             </div>
                         </div>
                         <button onclick="resetChatbot()"
@@ -382,11 +433,32 @@
 
                     <!-- Chat Input -->
                     <div class="p-4 border-t border-gray-100 bg-white">
-                        <form id="chatbotForm" class="flex gap-3">
-                            <input type="text" id="chatbotInput" placeholder="Type your health question..."
+                        <form id="chatbotForm" class="flex gap-2 items-center">
+                            <input type="text" id="chatbotInput" placeholder="Type or speak your health question..."
                                 class="flex-1 px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-lg transition"
                                 required>
-                            <button type="submit"
+
+                            <!-- Voice controls group -->
+                            <div class="voice-controls-group flex items-center gap-2">
+                                <button type="button" id="voice-mic-btn"
+                                    class="voice-btn w-14 h-14 flex items-center justify-center rounded-full shadow-lg transition-all"
+                                    title="Speak your question">
+                                    🎤
+                                </button>
+
+                                <!-- NEW: Stop speaking button (hidden by default) -->
+                                <button type="button" id="stop-tts-btn"
+                                    class="tts-stop-btn w-14 h-14 flex items-center justify-center rounded-full shadow-lg transition-all opacity-0 pointer-events-none"
+                                    title="Stop AI speaking">
+                                    🔇
+                                </button>
+
+                                <span id="voice-status" class="text-sm text-gray-600 whitespace-nowrap hidden md:block">
+
+                                </span>
+                            </div>
+
+                            <button type="submit" id="send-message-btn"
                                 class="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition shadow-lg hover:shadow-xl font-semibold flex items-center gap-2">
                                 <span>Send</span>
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -624,7 +696,7 @@
         }
 
         async function initializeChatbot() {
-            const greeting = "Hello! I'm your AI Health Assistant powered by Clinical BERT. I'm here to help you understand your health concerns better. To get started, could you tell me what health question or concern you have today?";
+            const greeting = "Hello! I'm your AI Health Assistant . I'm here to help you understand your health concerns better. To get started, could you tell me what health question or concern you have today?";
             addChatbotMessage(greeting, false);
             conversationHistory.push({ role: 'assistant', content: greeting });
             conversationStarted = true;
@@ -840,6 +912,7 @@
             }, 500);
         });
     </script>
+    <script src="{{ url_for('static', filename='js/voice-chat.js') }}"></script>
 </body>
 
 </html>

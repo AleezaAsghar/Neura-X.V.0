@@ -96,6 +96,74 @@
                 transform: translateY(0);
             }
         }
+
+        .voice-btn {
+            background: #e0f2fe;
+            border: 3px solid #06b6d4;
+            color: #0e7490;
+            font-size: 1.5rem;
+            transition: all 0.25s ease;
+        }
+
+        .voice-btn:hover {
+            background: #a5f3fc;
+            transform: scale(1.08);
+        }
+
+        .voice-btn.listening {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            animation: pulse-mic 1.2s infinite;
+        }
+
+        @keyframes pulse-mic {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.14);
+            }
+        }
+
+        .tts-stop-btn {
+            background: #fee2e2;
+            border: 3px solid #ef4444;
+            color: #991b1b;
+            font-size: 1.4rem;
+            transition: all 0.2s ease;
+        }
+
+        .tts-stop-btn.enabled {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .tts-stop-btn:hover {
+            background: #fecaca;
+            transform: scale(1.08);
+        }
+
+        .tts-stop-btn {
+            background: #fee2e2;
+            border: 3px solid #ef4444;
+            color: #991b1b;
+            font-size: 1.4rem;
+            transition: all 0.2s ease;
+        }
+
+        .tts-stop-btn.enabled {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .tts-stop-btn:hover {
+            background: #fecaca;
+            transform: scale(1.08);
+        }
     </style>
 </head>
 
@@ -421,7 +489,7 @@
                                     </path>
                                 </svg>
                             </div>
-                            AI Assistant Chat (Clinical BERT)
+                            AI Assistant Chat
                         </h2>
                         <div
                             class="bg-gradient-to-r from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-4 mb-4">
@@ -431,7 +499,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
-                                <span><strong>Powered by Clinical BERT:</strong> This AI assistant uses Clinical BERT to
+                                <span><strong>Powered by Neura-X:</strong> This AI assistant uses Neura-X to
                                     understand medical terminology and provide context-aware responses for {{
                                     specialist_name }} professionals.</span>
                             </p>
@@ -441,19 +509,40 @@
                             <div id="chatMessages" class="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-4">
                                 <div
                                     class="chat-message bg-gradient-to-r from-violet-100 to-indigo-100 rounded-xl p-4 max-w-sm border border-violet-200">
-                                    <p class="text-sm text-gray-700"><strong>Clinical BERT AI Assistant:</strong> Hello!
-                                        I'm your {{ specialist_name }} AI assistant powered by Clinical BERT. I can help
+                                    <p class="text-sm text-gray-700"><strong> AI Assistant:</strong> Hello!
+                                        I'm your {{ specialist_name }} AI assistant powered by Neura-X. I can help
                                         you with medical terminology, analysis, and professional guidance. How can I
                                         assist you today?</p>
                                 </div>
                             </div>
                             <div class="border-t-2 border-gray-200 p-4 bg-white">
-                                <div class="flex space-x-3">
-                                    <input type="text" id="chatInput" placeholder="Type your message..."
+                                <div class="flex gap-1.3 items-center">
+                                    <input type="text" id="chatInput" placeholder="Type or speak your message..."
                                         class="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all"
                                         onkeypress="if(event.key==='Enter') document.getElementById('sendChatBtn').click()">
+
+                                    <!-- Group mic + stop + status together -->
+                                    <div class="voice-controls-group">
+                                        <button type="button" id="voice-mic-btn-specialist"
+                                            class="voice-btn flex items-center justify-center rounded-full shadow-lg transition-all"
+                                            title="Speak → auto-send">
+                                            🎤
+                                        </button>
+
+                                        <button type="button" id="stop-tts-btn"
+                                            class="tts-stop-btn flex items-center justify-center rounded-full shadow-lg transition-all"
+                                            title="Stop AI speaking">
+                                            🔇
+                                        </button>
+
+                                        <span id="voice-status-specialist"
+                                            class="text-sm text-gray-600 whitespace-nowrap hidden md:block">
+
+                                        </span>
+                                    </div>
+
                                     <button id="sendChatBtn"
-                                        class="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white px-6 py-3 rounded-xl transition-all shadow-lg font-semibold">
+                                        class="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white px-4 py-3 rounded-xl transition-all shadow-lg font-semibold min-w-[70px]">
                                         Send
                                     </button>
                                 </div>
@@ -594,6 +683,16 @@
             chatMessages.appendChild(div);
             chatMessages.scrollTop = chatMessages.scrollHeight;
             updateChatChart();
+
+            if (!isUser && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(message);
+                utterance.lang = 'en-US';
+                utterance.rate = 1.05;
+                const voices = window.speechSynthesis.getVoices();
+                utterance.voice = voices.find(v => v.name.includes("Google") || v.name.includes("Microsoft")) || voices[0];
+                window.speechSynthesis.speak(utterance);
+            }
         }
 
         sendChatBtn.addEventListener('click', async () => {
@@ -602,7 +701,8 @@
 
             addChatMessage(message, true);
             chatInput.value = '';
-            sendChatBtn.disabled = true;
+
+
 
             try {
                 const response = await fetch('/api/chat', {
@@ -843,7 +943,18 @@
         updateReportCount();
         loadActivityChart();
         updateChatChart();
+        // Ensure Send button is always visible and clickable from start
+        document.addEventListener('DOMContentLoaded', () => {
+            const sendBtn = document.getElementById('sendChatBtn');
+            if (sendBtn) {
+                sendBtn.disabled = false;                    // always enabled
+                sendBtn.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+                sendBtn.style.display = 'block';             // force visible
+            }
+        });
     </script>
+    <script src="{{ url_for('static', filename='js/voice-doctor.js') }}"></script>
+
 </body>
 
 </html>

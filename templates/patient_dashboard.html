@@ -335,17 +335,15 @@
                     </div>
                 </div>
 
-                <!-- Critical Alerts Card -->
-                <div class="stat-card shadow-xl p-6 glow-cyan">
+                <!-- Critical Alerts Card (now shows anomalies) -->
+                <div id="criticalAlertsCard" class="stat-card shadow-xl p-6 glow-cyan cursor-pointer hover:scale-105 transition-transform">
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-slate-500 text-sm font-medium mb-1">Critical Alerts</p>
                             <p id="criticalReports" class="text-4xl font-black text-slate-800">0</p>
-                            <p class="text-rose-500 text-xs mt-1 flex items-center">
+                            <p id="attentionText" class="text-rose-500 text-xs mt-1 flex items-center">
                                 <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd"
-                                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                        clip-rule="evenodd"></path>
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
                                 </svg>
                                 Needs attention
                             </p>
@@ -353,10 +351,26 @@
                         <div class="w-14 h-14 rounded-2xl icon-gradient-4 flex items-center justify-center shadow-lg">
                             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
-                                </path>
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                             </svg>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Anomalies Details Panel (expands when card clicked) -->
+                <div id="anomaliesDetails" class="hidden bg-white rounded-xl shadow-lg p-6 mt-4 border-t-4 border-red-500">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-red-700">Abnormal Lab Values</h3>
+                        <button onclick="toggleAnomaliesDetails()" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="anomalyList" class="space-y-3 mb-6"></div>
+                    <div id="specialistRecommendations" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-800 mb-2">Recommended Specialists</h4>
+                        <div id="specialistsList" class="space-y-2"></div>
                     </div>
                 </div>
 
@@ -595,7 +609,7 @@
                     document.getElementById('totalReports').textContent = total;
                     document.getElementById('reviewedReports').textContent = reviewed;
                     document.getElementById('criticalReports').textContent = critical;
-                    document.getElementById('latestReport').textContent = latest;
+                    //document.getElementById('latestReport').textContent = latest;
 
                     // Display reports table
                     const tbody = document.getElementById('patientReportsBody');
@@ -632,6 +646,7 @@
                         tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No reports found</td></tr>';
                     }
                 }
+
 
                 // Load patient info
                 const patientResponse = await fetch(`/api/patient/${patientId}`);
@@ -679,10 +694,71 @@
                         ` : ''}
                     `;
                 }
+
+                    // ────────────────────────────────────────────────
+        // Load anomalies and update Critical Alerts card
+        // ────────────────────────────────────────────────
+                try {
+                    const anomaliesResp = await fetch(`/api/patient/${patientId}/anomalies`, {
+                        credentials: 'include',
+                        cache: 'no-store'
+                    });
+
+                    if (anomaliesResp.ok) {
+                        const anomaliesData = await anomaliesResp.json();
+
+                        // Count only critical anomalies
+                        const criticalCount = (anomaliesData.anomalies || []).filter(
+                            a => a.status === 'critical_high' || a.status === 'critical_low'
+                        ).length;
+
+                        // Update the big number
+                        const countEl = document.getElementById('criticalReports');
+                        if (countEl) {
+                            countEl.textContent = criticalCount;
+                        }
+
+                        // Update description text + styling
+                        const textEl = document.getElementById('attentionText');
+                        if (textEl) {
+                            if (criticalCount > 0) {
+                                textEl.innerHTML = `
+                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    Critical alert${criticalCount !== 1 ? 's' : ''} detected
+                                `;
+                                textEl.classList.remove('text-rose-500');
+                                textEl.classList.add('text-red-700', 'font-semibold', 'animate-pulse');
+                            } else {
+                                textEl.innerHTML = `
+                                    <svg class="w-3 h-3 mr-1 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    No critical issues
+                                `;
+                                textEl.classList.remove('text-red-700', 'animate-pulse', 'font-semibold');
+                                textEl.classList.add('text-emerald-600');
+                            }
+                        }
+                    } else {
+                        console.warn("[ANOMALY-CARD] Anomalies API returned:", anomaliesResp.status);
+                    }
+                } catch (err) {
+                    console.warn("[ANOMALY-CARD] Could not load anomalies:", err.message);
+                    // Don't break the whole dashboard
+                }    
             } catch (error) {
                 console.error('Error loading patient data:', error);
             }
         }
+
+                // Start loading all dashboard data when the page is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPatientData();
+        });
+
+        loadPatientData();
 
         // ==========================================
         // APPOINTMENT MANAGEMENT FOR PATIENTS
@@ -1182,7 +1258,7 @@
         }
 
         async function initializeChatbot() {
-            addChatbotMessage('Hello! I\'m your AI Health Assistant powered by Clinical BERT. To provide you with the best assistance, I need to understand your situation better. Let me ask you a few questions first.', false);
+            addChatbotMessage('Hello! I\'m Neura-x. i am here to provide you with the best assistance, I need to understand your situation better. Let me ask you a few questions first.', false);
 
             // Get context questions from server
             try {
@@ -1436,7 +1512,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <span><strong>Note:</strong> This AI assistant uses Clinical BERT to understand your medical
+                    <span><strong>Note:</strong> This AI assistant uses works to understand your medical
                         queries.
                         It will ask a few context questions to better assist you.</span>
                 </p>
@@ -1514,7 +1590,7 @@
                     </div>
                     <div>
                         <h3 class="text-xl font-bold text-red-700">Health Alert: Abnormal Lab Values Detected</h3>
-                        <p class="text-gray-600 text-sm">Your recent lab reports show values outside normal ranges</p>
+                        <p id="anomalySummary" class="text-gray-700 text-sm mt-1 font-medium"></p>
                     </div>
                 </div>
                 <button onclick="closeAnomalyAlert()" class="text-gray-400 hover:text-gray-600">
@@ -1528,7 +1604,7 @@
             <div id="anomalyList" class="space-y-3 mb-6"></div>
 
             <div id="specialistRecommendations" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h4 class="font-semibold text-blue-800 mb-2">Recommended Specialists</h4>
+                <h4 class="font-semibold text-blue-800 mb-2">Consult your specialists </h4>
                 <div id="specialistsList" class="space-y-2"></div>
             </div>
 
@@ -1549,80 +1625,214 @@
     </div>
 
     <script>
-        // Check for anomalies on page load
+// === ANOMALY POPUP LOGIC - cleaned & debug version ===
+        // Force conversion + fallback
+        if (typeof patientId === 'string') {
+            patientId = parseInt(patientId.trim(), 10) || 0;
+        }
+        if (!patientId) {
+            const fromBody = document.body.dataset.patientId || '';
+            if (fromBody) {
+                patientId = parseInt(fromBody, 10);
+                console.log("[ANOMALY] patientId taken from data-patient-id attribute");
+            }
+        }
+
+        console.log("[ANOMALY] Final patientId:", patientId);
+
         async function checkForAnomalies() {
-            // Check if already dismissed today
-            const dismissedDate = localStorage.getItem('anomalyDismissedDate');
-            if (dismissedDate === new Date().toDateString()) {
+            console.log("[ANOMALY] Starting anomaly check");
+
+            // Already dismissed today?
+            if (localStorage.getItem('anomalyDismissedDate') === new Date().toDateString()) {
+                console.log("[ANOMALY] Already dismissed today → skipping");
+                return;
+            }
+
+            if (!patientId || patientId <= 0 || isNaN(patientId)) {
+                console.warn("[ANOMALY] Invalid patientId → cannot check anomalies");
                 return;
             }
 
             try {
-                const response = await fetch(`/api/patient/${patientId}/anomalies`);
-                const data = await response.json();
+                console.log(`[ANOMALY] Fetching /api/patient/${patientId}/anomalies`);
 
-                if (data.has_anomalies && data.anomalies.length > 0) {
-                    showAnomalyAlert(data);
+                const response = await fetch(`/api/patient/${patientId}/anomalies`, {
+                    credentials: 'include',     // very important for session-based auth
+                    cache: 'no-store',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                console.log("[ANOMALY] Response status:", response.status);
+
+                if (!response.ok) {
+                    let errorBody = '';
+                    try { errorBody = await response.text(); } catch {}
+                    console.error("[ANOMALY] Request failed:", response.status, errorBody || '(no body)');
+                    if (response.status === 401) {
+                        console.error("[ANOMALY] 401 → not logged in or session expired");
+                    }
+                    if (response.status === 403) {
+                        console.error("[ANOMALY] 403 → forbidden (wrong patient id or role?)");
+                    }
+                    return;
                 }
-            } catch (error) {
-                console.error('Error checking anomalies:', error);
+
+                const data = await response.json();
+                console.log("[ANOMALY] Response data:", data);
+
+                const hasAnomalies = data?.has_anomalies === true;
+                const anomalyCount = data?.anomalies?.length || 0;
+
+                console.log(`[ANOMALY] has_anomalies: ${hasAnomalies}, count: ${anomalyCount}`);
+
+                if (hasAnomalies && anomalyCount > 0) {
+                    console.log("[ANOMALY] Anomalies found → showing popup");
+                    showAnomalyAlert(data);
+                } else {
+                    console.log("[ANOMALY] No anomalies to display");
+                }
+
+            } catch (err) {
+                console.error("[ANOMALY] Fetch / processing error:", err);
             }
         }
 
         function showAnomalyAlert(data) {
+            console.log("[ANOMALY] showAnomalyAlert() executed with data:", data);
+
             const modal = document.getElementById('anomalyAlertModal');
+            if (!modal) {
+                console.error("[ANOMALY] Modal #anomalyAlertModal not found");
+                return;
+            }
+
             const anomalyList = document.getElementById('anomalyList');
             const specialistsList = document.getElementById('specialistsList');
 
-            // Build anomaly list
-            let anomalyHtml = '';
-            data.anomalies.slice(0, 10).forEach(a => {
-                const statusColors = {
-                    'critical_high': 'bg-red-100 border-red-500 text-red-800',
-                    'critical_low': 'bg-red-100 border-red-500 text-red-800',
-                    'high': 'bg-orange-100 border-orange-400 text-orange-800',
-                    'low': 'bg-yellow-100 border-yellow-400 text-yellow-800'
-                };
-                const statusLabels = {
-                    'critical_high': '⚠️ CRITICALLY HIGH',
-                    'critical_low': '⚠️ CRITICALLY LOW',
-                    'high': '↑ High',
-                    'low': '↓ Low'
-                };
+            if (!anomalyList || !specialistsList) {
+                console.error("[ANOMALY] Missing anomalyList or specialistsList container");
+                return;
+            }
 
-                anomalyHtml += `
-                    <div class="flex items-center justify-between p-3 rounded-lg border-l-4 ${statusColors[a.status] || 'bg-gray-100'}">
-                        <div>
-                            <span class="font-semibold">${a.test_name}</span>
-                            <span class="ml-2">${a.value} ${a.unit || ''}</span>
-                            <span class="text-xs text-gray-500 ml-2">(Normal: ${a.normal_min} - ${a.normal_max})</span>
+            // Clear previous content
+            anomalyList.innerHTML = '';
+            specialistsList.innerHTML = '';
+
+            const anomalies = data.anomalies || [];
+            const totalCount = anomalies.length;
+            const criticalCount = anomalies.filter(a => a.status?.startsWith('critical')).length;
+
+            // 1. Add summary paragraph at the top (replaces generic message)
+            const summaryText = criticalCount > 0
+                ? `Found <strong>${totalCount}</strong> abnormal result${totalCount !== 1 ? 's' : ''} (${criticalCount} critical) — urgent review recommended.`
+                : `Found <strong>${totalCount}</strong> abnormal result${totalCount !== 1 ? 's' : ''} — please discuss with your doctor.`;
+
+            // Insert summary right after the title (you can do this via JS or edit HTML)
+            let summaryEl = document.getElementById('anomalySummary');
+            if (!summaryEl) {
+                // If you didn't add id="anomalySummary" yet, create it dynamically
+                const titleDiv = modal.querySelector('h3')?.parentElement;
+                if (titleDiv) {
+                    summaryEl = document.createElement('p');
+                    summaryEl.id = 'anomalySummary';
+                    summaryEl.className = 'text-gray-700 text-sm mt-2 font-medium';
+                    titleDiv.appendChild(summaryEl);
+                }
+            }
+            if (summaryEl) {
+                summaryEl.innerHTML = summaryText;
+                if (criticalCount > 0) summaryEl.classList.add('text-red-700');
+            }
+
+            // 2. Build detailed list of anomalies
+            let html = '';
+            anomalies.forEach(a => {
+                const isCritical = a.status?.startsWith('critical') || false;
+                const bgColor = isCritical ? 'bg-red-50 border-red-400' 
+                                        : (a.status === 'high' ? 'bg-orange-50 border-orange-400' 
+                                                                : 'bg-yellow-50 border-yellow-400');
+
+                const severityBadge = isCritical 
+                    ? `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">CRITICAL ${a.status.includes('high') ? 'HIGH' : 'LOW'}</span>`
+                    : (a.status === 'high' ? `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-800">HIGH</span>`
+                                        : `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">LOW</span>`);
+
+                html += `
+                    <div class="p-4 rounded-lg border ${bgColor} shadow-sm">
+                        <div class="flex justify-between items-start gap-4">
+                            <div class="flex-1">
+                                <div class="font-semibold text-base">${a.test_name || 'Unknown test'}</div>
+                                <div class="mt-1.5 text-xl font-bold ${isCritical ? 'text-red-700' : 'text-orange-700'}">
+                                    ${a.value ?? '?'} ${a.unit || ''}
+                                </div>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    Normal range: <span class="font-medium">${a.normal_min ?? '?'} – ${a.normal_max ?? '?'}</span>
+                                </div>
+                                ${a.report_date ? `<div class="text-xs text-gray-500 mt-1">From report dated ${new Date(a.report_date).toLocaleDateString()}</div>` : ''}
+                            </div>
+                            <div class="flex-shrink-0">
+                                ${severityBadge}
+                            </div>
                         </div>
-                        <span class="font-bold">${statusLabels[a.status] || a.status}</span>
                     </div>
                 `;
             });
-            anomalyList.innerHTML = anomalyHtml;
 
-            // Build specialists list
-            let specialistsHtml = '';
-            for (const [specialist, tests] of Object.entries(data.specialists_needed || {})) {
-                specialistsHtml += `
-                    <div class="flex items-center justify-between bg-white p-2 rounded border">
-                        <div>
-                            <span class="font-medium">${specialist}</span>
-                            <span class="text-sm text-gray-500 ml-2">for ${tests.join(', ')}</span>
+            anomalyList.innerHTML = html || `
+                <div class="text-center text-gray-600 py-10">
+                    <p>No detailed anomaly information available at this time.</p>
+                    <p class="text-sm mt-2">Please check your latest lab reports manually.</p>
+                </div>
+            `;
+
+            // 3. Specialists / next steps (keep but make secondary)
+            let specHtml = '';
+            const specialists = data.specialists_needed || {};
+
+            if (Object.keys(specialists).length > 0) {
+                specHtml += '<p class="text-sm text-blue-800 mb-3">Based on the abnormalities found, consider consulting:</p>';
+                Object.entries(specialists).forEach(([spec, tests]) => {
+                    specHtml += `
+                        <div class="flex justify-between items-center bg-white p-3 rounded-lg border border-blue-100">
+                            <div>
+                                <div class="font-medium text-blue-900">${spec}</div>
+                                <div class="text-sm text-gray-600">Related to: ${Array.isArray(tests) ? tests.join(', ') : tests}</div>
+                            </div>
+                            <a href="/patient/appointments?specialist=${encodeURIComponent(spec)}" 
+                            class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition">
+                                Book Now
+                            </a>
                         </div>
-                        <a href="/patient/appointments" class="text-indigo-600 hover:text-indigo-800 text-sm">Book →</a>
-                    </div>
+                    `;
+                });
+            } else {
+                specHtml = `
+                    <p class="text-center text-gray-600 py-6">
+                        No specific specialist flagged yet — discuss results with your primary care doctor soon.
+                    </p>
                 `;
             }
-            specialistsList.innerHTML = specialistsHtml;
 
+            specialistsList.innerHTML = specHtml;
+
+            // Force show the modal
             modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            modal.style.visibility = 'visible';
+            modal.style.opacity = '1';
+
+            console.log("[ANOMALY] Popup should now be visible with detailed anomalies");
         }
 
         function closeAnomalyAlert() {
-            document.getElementById('anomalyAlertModal').classList.add('hidden');
+            const modal = document.getElementById('anomalyAlertModal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
         }
 
         function dismissAnomalyAlert() {
@@ -1630,10 +1840,19 @@
             closeAnomalyAlert();
         }
 
-        // Run anomaly check when page loads
+        // Run on page load
         document.addEventListener('DOMContentLoaded', () => {
+            console.log("[ANOMALY] DOMContentLoaded fired → checking anomalies");
             checkForAnomalies();
         });
+
+        // Extra fallback run (in case timing issues)
+        setTimeout(() => {
+            if (patientId > 0) {
+                console.log("[ANOMALY] Late check fallback");
+                checkForAnomalies();
+            }
+        }, 1800);
     </script>
 </body>
 
