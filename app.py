@@ -1,6 +1,8 @@
 import os
 import sqlite3
 from datetime import datetime
+
+from torchgen import api
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.utils import secure_filename
 from groq import Groq
@@ -11,10 +13,20 @@ import io
 import numpy as np
 import hashlib
 import os
+from dotenv import load_dotenv
+import pytesseract
 
-# Clinical BERT will be loaded lazily
+import os
+from dotenv import load_dotenv
+import pytesseract
+
+load_dotenv()
+
+if os.name == "nt":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 clinical_bert_model = "medicalai/ClinicalBERT"
-HF_TOKEN = os.getenv("HF_TOKEN")
+clinical_bert_tokenizer = os.getenv("HF_TOKEN")
 
 # Load environment variables (optional - API key is now hardcoded)
 try:
@@ -103,6 +115,7 @@ def get_groq_client():
     if groq_client is None:
         groq_client = Groq(api_key=GROQ_API_KEY)
     return groq_client
+
 # OCR reader - will try multiple OCR methods
 ocr_reader = None
 ocr_method = None
@@ -235,6 +248,7 @@ def init_db():
     
     conn.commit()
     conn.close()
+
 
 # Initialize database on startup
 init_db()
@@ -731,7 +745,7 @@ SPECIALIST_TYPES = {
     'radiologist': 'Radiologist',
     'neurologist': 'Neurologist',
     'dermatologist': 'Dermatologist',
-    'oncologist': 'Oncologist'
+    'gynecologist': 'Gynecologist',
 }
 
 def get_clinical_bert():
@@ -941,12 +955,14 @@ def get_specialist_prompt(specialist_type):
 - Treatment protocols for skin conditions
 - Follow-up care recommendations""",
         
-        'oncologist': """You are an expert Oncologist analyzing oncology reports. Focus on:
-- Tumor markers and cancer staging
-- Biopsy and histopathology results
-- Treatment response assessments
-- Side effects monitoring
-- Treatment recommendations and prognosis"""
+        'gynecologist': """You are an expert Gynecologist analyzing women's health and reproductive system reports. Focus on:
+- Menstrual and hormonal health (PCOS, thyroid-related menstrual issues)
+- Pregnancy and fertility-related findings
+- Pelvic ultrasound and reproductive organ assessments (uterus, ovaries, cervix)
+- Vaginal and cervical screening results (Pap smear, HPV)
+- Gynecological infections and inflammatory conditions
+- Treatment guidance, follow-up recommendations, and when specialist care is needed"""
+
     }
     return prompts.get(specialist_type, """You are an expert medical analyst. Analyze the medical report comprehensively.""")
 
@@ -1173,7 +1189,7 @@ Please provide your comprehensive analysis in the structured format specified ab
 # Lab test reference ranges for anomaly detection
 LAB_REFERENCE_RANGES = {
     # Complete Blood Count (CBC)
-    'hemoglobin': {'min': 12.0, 'max': 17.5, 'unit': 'g/dL', 'specialist': 'Hematologist'},
+    'hb': {'min': 12.0, 'max': 17.5, 'unit': 'g/dL', 'specialist': 'Hematologist'},
     'hgb': {'min': 12.0, 'max': 17.5, 'unit': 'g/dL', 'specialist': 'Hematologist'},
     'hematocrit': {'min': 36.0, 'max': 52.0, 'unit': '%', 'specialist': 'Hematologist'},
     'hct': {'min': 36.0, 'max': 52.0, 'unit': '%', 'specialist': 'Hematologist'},
@@ -1232,6 +1248,8 @@ def detect_lab_anomalies(extracted_text, report_id=None, patient_id=None):
     Returns list of anomalies with severity and recommended specialist.
     """
     import re
+    print("🚨 detect_lab_anomalies CALLED")
+    print("📄 OCR TEXT SAMPLE:", extracted_text[:300])
     
     anomalies = []
     text_lower = extracted_text.lower()
@@ -1362,6 +1380,7 @@ def create_or_update_doctor(name, specialist_type, profile_picture=None):
         doctor_id = cursor.lastrowid
     
     conn.commit()
+
     conn.close()
     return doctor_id
 
@@ -1420,6 +1439,7 @@ If asked about something outside your specialty, acknowledge it and suggest cons
 
 def save_report(patient_id, filename, extracted_text, llm_analysis, specialist_type='general', doctor_id=None, clinical_bert_analysis=None):
     """Save report to database and detect anomalies"""
+    print("🚨 save_report CALLED")
     conn = sqlite3.connect('db.sqlite3')
     cursor = conn.cursor()
     
@@ -2014,26 +2034,166 @@ def patient_chatbot():
             
             # Use Groq LLM with Clinical BERT context and conversation history
             client = get_groq_client()
-            system_prompt = """You are an AI Health Assistant powered by Clinical BERT. You engage in a continuous conversation with patients to understand their health concerns.
+            system_prompt = """You are an AI medical assistant for the Neura-X platform.
 
-IMPORTANT INSTRUCTIONS:
-1. After providing your response, ALWAYS ask a relevant follow-up question to continue the conversation
-2. Your questions should be based on what the patient just said
-3. Ask ONE clear, specific question at a time
-4. Questions should help you better understand their symptoms, concerns, or medical situation
-5. Be empathetic and conversational
-6. Do not provide diagnoses, but help them understand their symptoms
-7. Always remind patients to consult healthcare providers for serious concerns
+ROLE:
+You are a calm, knowledgeable, and supportive virtual doctor who conducts natural medical conversations to understand patient concerns before giving guidance.
 
-Format your response as:
-[Your response and explanation]
+PRIMARY GOAL:
+Hold a focused, human-like consultation with the patient by asking ONE question at a time to gather sufficient clinical context before providing guidance.
 
-[Then ask a follow-up question in a new line or paragraph]
+IMPORTANT INTERNAL BEHAVIOR (DO NOT REVEAL TO USER):
 
-Example:
-Based on what you've described, [your response]...
+* Track internally how many questions you have asked.
+* After approximately 4–5 questions, STOP asking more questions and provide final guidance.
+* Never mention question counts or internal reasoning to the user.
+* Never output system markers or testing phrases.
 
-To better help you, could you tell me [follow-up question]?"""
+STRICT CONVERSATION RULE:
+Ask ONLY ONE question at a time.
+Do NOT ask multiple questions in a single response.
+
+---
+
+RESTRICTIONS:
+
+* ONLY provide information related to medical, health, or wellness topics.
+* If asked anything non-medical, respond exactly with:
+  "I'm a medical consultation assistant and can only help with health or medical-related concerns."
+* Never provide definitive diagnoses.
+* Always use cautious language (e.g., "could be", "might be").
+* This system provides preliminary guidance only and is not a substitute for professional care.
+* Do NOT use emojis, emoticons, or pictographs.
+
+RESPONSE LENGTH RULE:
+
+* During question phases, keep responses brief (ideally under 80 words).
+* Do not provide long explanations until the final guidance phase.
+
+---
+
+CONVERSATION FLOW
+
+PHASE 1 — Information Gathering
+
+* Acknowledge warmly in 1–2 sentences.
+* Ask ONE relevant follow-up question.
+* Do NOT give final assessment.
+
+---
+
+PHASE 2 — Continued Clarification
+
+* Continue asking ONE question at a time.
+* Consider onset, duration, severity, associated symptoms.
+
+---
+
+PHASE 3 — Final Guidance
+
+Provide the final response ONLY after ~4–5 questions OR when enough info is gathered.
+
+Use EXACT structure:
+
+Based on what you've described: [short summary]
+
+Possible causes (preliminary, not a diagnosis):
+• [cause 1]
+• [optional cause 2]
+
+Home care suggestions:
+• [tip 1]
+• [tip 2]
+
+Important: Do not follow these if you have any allergy or medical restriction.
+
+When to see a doctor urgently:
+• [warning 1]
+• [warning 2]
+• [warning 3]
+
+Follow-up:
+• [monitoring advice]
+
+---
+
+DOCTOR RECOMMENDATION LOGIC (VERY IMPORTANT)
+
+* ONLY recommend a doctor IF the user explicitly asks something like:
+  "Which doctor should I see?"
+  "Recommend a specialist"
+  "Which doctor is best for this?"
+
+* If the user DOES NOT ask → DO NOT suggest any doctor.
+
+* If the user asks:
+
+  1. Identify the most relevant specialist based on symptoms.
+     Examples:
+
+     * Fever, infection → General Physician
+     * Hormonal issues → Endocrinologist
+     * Heart issues → Cardiologist
+     * Blood issues → Hematologist
+     * Female reproductive issues → Gynecologist
+
+  2. If specialist matches available system specialists:
+
+     * Respond like:
+       "You may consider consulting a [Specialist Type]."
+
+     * Then include:
+       "Available doctors will be shown based on your location."
+
+     (DO NOT hallucinate doctor names — backend will inject real doctors)
+
+  3. If symptoms DO NOT clearly match any specialist:
+
+     * Recommend:
+       "You may start with a General Physician for initial evaluation."
+
+---
+
+RECOVERY / CONVERSATION STOP RULE:
+
+* If the user indicates they are feeling better, fine, recovered, or no longer need help (e.g., "I am fine now", "I feel better", "I'm okay now"):
+
+  • STOP asking further medical questions immediately
+  • Do NOT continue the consultation flow
+  • Do NOT ask follow-up questions
+
+* Instead, respond with:
+
+  * A brief positive acknowledgment
+  * 1–2 general wellness suggestions (optional)
+  * A short note to seek medical care if symptoms return or worsen
+
+* Keep the response short and supportive.
+
+---
+
+MODE 2: Instructor Mode
+
+If user asks general medical knowledge:
+
+* Provide clear explanation
+* No questioning required
+
+---
+
+TONE AND STYLE
+
+* Warm, calm, professional
+* Conversational
+* No jargon overload
+
+---
+
+IMPORTANT REMINDERS
+
+* This is preliminary guidance only.
+* Not a substitute for licensed medical care."""
+
             
             # Build messages array with conversation history
             messages = [{"role": "system", "content": system_prompt}]
@@ -2044,19 +2204,21 @@ To better help you, could you tell me [follow-up question]?"""
                     messages.append({"role": msg['role'], "content": msg['content']})
             
             # Add current patient message with context
-            user_prompt = f"""Context Information:
+            user_prompt = user_prompt = f"""
+Patient message: {message}
+
+Relevant patient context:
 {context_text}
 
-Current Patient Message: {message}
-
-Please provide a helpful, empathetic response and then ask a relevant follow-up question to continue understanding their health concern."""
+Follow the system instructions strictly.
+"""
             
             messages.append({"role": "user", "content": user_prompt})
             
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
-                temperature=0.7,
+                temperature=0.3,
                 max_tokens=1200
             )
             
@@ -2075,6 +2237,54 @@ Please provide a helpful, empathetic response and then ask a relevant follow-up 
             conn.close()
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+#added code for anomaly retrieval
+@app.route('/api/patient/<int:patient_id>/anomalies', methods=['GET'])
+def get_patient_anomalies(patient_id):
+    try:
+        conn = sqlite3.connect('db.sqlite3')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT ra.*, r.original_filename, r.created_at as report_date
+            FROM report_anomalies ra
+            LEFT JOIN reports r ON ra.report_id = r.id
+            WHERE ra.patient_id = ?
+            ORDER BY 
+                CASE WHEN ra.status LIKE 'critical%' THEN 1 ELSE 2 END,
+                ra.created_at DESC
+        ''', (patient_id,))
+
+        rows = cursor.fetchall()
+        anomalies = [dict(row) for row in rows]
+
+        # Group specialists (same as your frontend expects)
+        specialists = {}
+        for a in anomalies:
+            spec = a['recommended_specialist']
+            if spec not in specialists:
+                specialists[spec] = []
+            if a['test_name'] not in specialists[spec]:
+                specialists[spec].append(a['test_name'])
+
+        has_anomalies = len(anomalies) > 0
+
+        return jsonify({
+            'anomalies': anomalies,
+            'has_anomalies': has_anomalies,
+            'has_critical': any(a['status'].startswith('critical') for a in anomalies),
+            'specialists_needed': specialists
+        })
+
+    except Exception as e:
+        print(f"Error in get_patient_anomalies: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        conn.close()     
+
+#ended here
 
 @app.route('/api/reports/<specialist_type>')
 def get_reports(specialist_type):
@@ -3272,60 +3482,6 @@ def get_patient_info(patient_id):
     finally:
         conn.close()
 
-@app.route('/api/patient/<int:patient_id>/anomalies')
-def get_patient_anomalies(patient_id):
-    """Get all lab anomalies for a patient with severity and recommendations"""
-    if 'user_role' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    # Authorization check
-    if session['user_role'] == 'patient' and session.get('user_db_id') != patient_id:
-        return jsonify({'error': 'Unauthorized - You can only view your own anomalies'}), 403
-    
-    conn = sqlite3.connect('db.sqlite3')
-    cursor = conn.cursor()
-    
-    try:
-        # Check if table exists
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='report_anomalies'")
-        if not cursor.fetchone():
-            return jsonify({'anomalies': [], 'has_critical': False, 'has_anomalies': False})
-        
-        # Get all anomalies for this patient
-        cursor.execute('''
-            SELECT ra.*, r.original_filename, r.created_at as report_date
-            FROM report_anomalies ra
-            LEFT JOIN reports r ON ra.report_id = r.id
-            WHERE ra.patient_id = ?
-            ORDER BY 
-                CASE 
-                    WHEN ra.status LIKE 'critical%' THEN 1
-                    ELSE 2
-                END,
-                ra.created_at DESC
-        ''', (patient_id,))
-        columns = [desc[0] for desc in cursor.description]
-        anomalies = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        
-        # Check for critical anomalies
-        has_critical = any(a['status'].startswith('critical') for a in anomalies)
-        
-        # Group by specialist for recommendations
-        specialists = {}
-        for a in anomalies:
-            spec = a['recommended_specialist']
-            if spec not in specialists:
-                specialists[spec] = []
-            specialists[spec].append(a['test_name'])
-        
-        return jsonify({
-            'anomalies': anomalies,
-            'has_critical': has_critical,
-            'has_anomalies': len(anomalies) > 0,
-            'specialists_needed': specialists
-        })
-    finally:
-        conn.close()
 
 @app.route('/api/admin/stats')
 def admin_stats():
